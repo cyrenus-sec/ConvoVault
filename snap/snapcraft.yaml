@@ -1,0 +1,23 @@
+name: convovault
+version: '1.0.0'
+summary: Chat Archive Viewer with AI capabilities
+description: |
+  ConvoVault is a Chat Archive Viewer with a transformer model.
+
+grade: stable
+confinement: strict   # use 'devmode' for testing without strict confinement
+base: core20
+
+apps:
+  convovault:
+    command: ConvoVault/ConvoVault
+    desktop: convovault.desktop
+    plugs: [home, network]
+
+parts:
+  convovault:
+    plugin: dump
+    source: /mnt/flutter_drive/python/convovault/convovault-ai/dist/
+    source-type: local
+    stage:
+      - "*"

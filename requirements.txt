@@ -1,0 +1,4 @@
+transformers
+torch==2.0.1
+psycopg2
+python-dotenv==1.0.0

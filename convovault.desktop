@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=ConvoVault
+Comment=Chat Archive Viewer
+Exec=ConvoVault/ConvoVault
+Icon=icon.png
+Terminal=false
+Type=Application
+Categories=Utility;AI;
