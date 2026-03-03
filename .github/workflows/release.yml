@@ -47,7 +47,7 @@ jobs:
         sed -i.bak 's/torch==2.0.1//g' requirements.txt
         
         # Install PyTorch CPU for Linux only to avoid GPU bloat
-        pip install --no-cache-dir torch==2.0.1+cpu torchvision==0.15.2+cpu --index-url https://download.pytorch.org/whl/cpu
+        pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu
         
         pip install --no-cache-dir -r requirements.txt
         git checkout requirements.txt
