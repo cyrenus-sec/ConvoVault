@@ -32,7 +32,17 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install pyinstaller PyQt5 PyQtWebEngine
+        # Force cpu install and avoid GPU dependencies download
+        pip install torch==2.0.1+cpu torchvision==0.15.2+cpu --index-url https://download.pytorch.org/whl/cpu
+        # Avoid conflicting torch requirements by temporarily removing it
+        sed -i 's/torch==2.0.1//g' requirements.txt
         pip install -r requirements.txt
+        # Restore requirements file to avoid git dirty state
+        git checkout requirements.txt
+
+    - name: Download AI Model
+      run: |
+        python QuestionAnswering.py
 
     - name: Build with PyInstaller
       run: |
