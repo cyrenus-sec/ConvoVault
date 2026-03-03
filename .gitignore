@@ -20,7 +20,6 @@ var/
 *.egg-info/
 .installed.cfg
 *.egg
-*.spec
 
 # PyInstaller
 *.manifest
