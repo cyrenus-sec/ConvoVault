@@ -11,7 +11,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [ubuntu-latest]
 
     steps:
     - name: Checkout code
@@ -23,7 +23,6 @@ jobs:
         python-version: '3.10'
 
     - name: Free Disk Space (Ubuntu)
-      if: runner.os == 'Linux'
       uses: jlumbroso/free-disk-space@main
       with:
         tool-cache: false
@@ -35,7 +34,6 @@ jobs:
         swap-storage: true
 
     - name: Install system dependencies (Linux)
-      if: runner.os == 'Linux'
       run: |
         sudo apt-get update
         sudo apt-get install -y libgl1 libglx-mesa0 libxkbcommon-x11-0 libxcb-xinerama0 dbus-x11
@@ -48,12 +46,8 @@ jobs:
         # Avoid conflicting torch requirements
         sed -i.bak 's/torch==2.0.1//g' requirements.txt
         
-        # Install OS-specific PyTorch to avoid GPU bloat
-        if [ "$RUNNER_OS" == "macOS" ]; then
-          pip install --no-cache-dir torch==2.0.1 torchvision==0.15.2
-        else
-          pip install --no-cache-dir torch==2.0.1+cpu torchvision==0.15.2+cpu --index-url https://download.pytorch.org/whl/cpu
-        fi
+        # Install PyTorch CPU for Linux only to avoid GPU bloat
+        pip install --no-cache-dir torch==2.0.1+cpu torchvision==0.15.2+cpu --index-url https://download.pytorch.org/whl/cpu
         
         pip install --no-cache-dir -r requirements.txt
         git checkout requirements.txt
@@ -66,25 +60,16 @@ jobs:
       run: |
         pyinstaller ConvoVault.spec
 
-    - name: Archive build (Linux/macOS)
-      if: runner.os != 'Windows'
+    - name: Archive build
       run: |
         cd dist
-        tar -czvf ConvoVault-${{ runner.os }}.tar.gz ConvoVault/
-
-    - name: Archive build (Windows)
-      if: runner.os == 'Windows'
-      run: |
-        cd dist
-        Compress-Archive -Path ConvoVault -DestinationPath ConvoVault-${{ runner.os }}.zip
+        tar -czvf ConvoVault-Linux.tar.gz ConvoVault/
 
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: ConvoVault-${{ runner.os }}-archive
-        path: |
-          dist/ConvoVault-${{ runner.os }}.tar.gz
-          dist/ConvoVault-${{ runner.os }}.zip
+        name: ConvoVault-Linux-archive
+        path: dist/ConvoVault-Linux.tar.gz
 
   release:
     name: Create Release
@@ -107,7 +92,5 @@ jobs:
         with:
           files: |
             dist-artifacts/ConvoVault-Linux.tar.gz
-            dist-artifacts/ConvoVault-macOS.tar.gz
-            dist-artifacts/ConvoVault-Windows.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
