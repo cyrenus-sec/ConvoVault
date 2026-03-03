@@ -6,6 +6,8 @@ ConvoVault is an AI-powered desktop application built with Python and PyQt5. It 
 
 ConvoVault allows users to convert their exported chat histories into visually appealing, searchable local HTML archives. Furthermore, it features an integrated AI Question-Answering system (powered by Hugging Face `transformers` and `torch`) allowing you to interact intelligently with your local chat archives.
 
+![screen](screen.png)
+
 ## Features
 
 - **Chat Parsing & Archiving**: Convert exported ChatGPT and Claude conversation JSON/HTML into beautiful, responsive local HTML archives.
