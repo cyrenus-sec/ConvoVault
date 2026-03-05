@@ -7,35 +7,35 @@ from pathlib import Path
 import threading
 import sqlite3
 import re
+import time
+import base64
  
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, 
                             QWidget, QPushButton, QLabel, QLineEdit, QFileDialog, 
                             QProgressBar, QTextEdit, QSplitter, QListWidget, 
                             QListWidgetItem, QMessageBox, QFrame, QScrollArea,
-                            QTabWidget, QComboBox, QCheckBox , QDesktopWidget)
-from PyQt5.QtCore import Qt, QThread, pyqtSignal, QUrl, QTimer , QEventLoop
-from PyQt5.QtGui import QFont, QPalette, QColor, QIcon , QDesktopServices
+                            QTabWidget, QComboBox, QCheckBox, QDesktopWidget, QDialog, QFormLayout)
+from PyQt5.QtCore import Qt, QThread, pyqtSignal, QUrl, QTimer, QEventLoop
+from PyQt5.QtGui import QFont, QPalette, QColor, QIcon, QDesktopServices
 from PyQt5.QtWebEngineWidgets import QWebEngineView
-import QuestionAnswering
+
+from LLMManager import LLMManager
+from SettingsManager import SettingsManager
 
 # Add Q&A Worker Thread
-class QAWorker(QThread):
-    answer_ready = pyqtSignal(str, float, str, float)
+class LLMChatWorker(QThread):
+    answer_ready = pyqtSignal(dict)
     
-    def __init__(self, qa_system, context, question):
+    def __init__(self, llm_manager, context, chat_history, question):
         super().__init__()
-        self.qa_system = qa_system
+        self.llm_manager = llm_manager
         self.context = context
+        self.chat_history = chat_history
         self.question = question
         
     def run(self):
-        result = self.qa_system.answer_question(self.context, self.question)
-        self.answer_ready.emit(
-            result.answer, 
-            result.confidence, 
-            result.context_window,
-            result.processing_time
-        )
+        result = self.llm_manager.chat_with_context(self.context, self.chat_history, self.question)
+        self.answer_ready.emit(result)
 
 class ConversionWorker(QThread):
     progress_updated = pyqtSignal(int, str)
@@ -123,17 +123,22 @@ class ConversionWorker(QThread):
                     if message and message.get('content') and message['content'].get('parts'):
                         content_parts = message['content']['parts']
                         if content_parts and content_parts[0]:
+                            if isinstance(content_parts[0], dict):
+                                text = str(content_parts[0])
+                            else:
+                                text = str(content_parts[0])
+                            
                             messages.append({
                                 'sender': 'human' if message.get('author', {}).get('role') == 'user' else 'assistant',
-                                'text': content_parts[0],
+                                'text': text,
                                 'created_at': message.get('create_time', ''),
                                 'uuid': node_id,
-                                'content': [{'type': 'text', 'text': content_parts[0]}],
+                                'content': [{'type': 'text', 'text': text}],
                                 'files': [],
                                 'attachments': []
                             })
                 
-                conversation['chat_messages'] = sorted(messages, key=lambda x: x.get('created_at', ''))
+                conversation['chat_messages'] = sorted(messages, key=lambda x: str(x.get('created_at', '')))
                 conversations.append(conversation)
         
         return conversations
@@ -645,8 +650,10 @@ class ConvoVault(QMainWindow):
         self.conversation_files = []
         self.current_conversation_data = None
         self.current_conversation_title = "No conversation loaded"
-        self.qa_system = None
-        self.qa_worker = None
+        self.llm_manager = None
+        self.llm_chat_worker = None
+        self.chat_history = []
+        self.settings_manager = SettingsManager()
         
         self.init_ui()
         self.create_status_bar()  
@@ -658,8 +665,8 @@ class ConvoVault(QMainWindow):
     def init_qa_system(self):
         def load_model():
             try:
-                self.qa_system = QuestionAnswering.QuestionAnswering()
-                self.update_qa_status("AI Model Ready", "#238636")
+                self.llm_manager = LLMManager()
+                self.update_qa_status("LLM Provider Ready", "#238636")
             except Exception as e:
                 self.update_qa_status(f"Model Error: {str(e)}", "#dc3545")
         
@@ -1082,13 +1089,18 @@ class ConvoVault(QMainWindow):
         status_section.setStyleSheet("QFrame { padding: 15px; }")
         status_layout = QVBoxLayout(status_section)
         
-        self.qa_status_label = QLabel("Loading AI Model...")
+        self.qa_status_label = QLabel("Loading LLM Provider...")
         self.qa_status_label.setStyleSheet("color: #8b949e; font-size: 13px; margin-top: 8px;")
         status_layout.addWidget(self.qa_status_label)
         
-        self.current_conv_label = QLabel("Model : deepset/roberta-base-squad2 :  MAX_LENGTH = 384  ;\nMIN_CONFIDENCE_THRESHOLD = 0.1 ; MAX_ANSWER_LENGTH = 100 \nMIN_ANSWER_CHARS = 4")
+        self.current_conv_label = QLabel("Configure your LLM Provider in Settings")
         self.current_conv_label.setStyleSheet("color: #656d76; font-size: 12px; margin-top: 5px; font-style: italic;")
         status_layout.addWidget(self.current_conv_label)
+        
+        self.settings_btn = QPushButton("⚙️ Settings")
+        self.settings_btn.setMaximumWidth(120)
+        self.settings_btn.clicked.connect(self.open_settings)
+        status_layout.addWidget(self.settings_btn)
         
         layout.addWidget(status_section)
         
@@ -1129,6 +1141,77 @@ class ConvoVault(QMainWindow):
         layout.addWidget(help_text)
         
         layout.addStretch()
+
+    def open_settings(self):
+        dialog = QDialog(self)
+        dialog.setWindowTitle("LLM Settings")
+        dialog.setMinimumWidth(400)
+        
+        layout = QVBoxLayout(dialog)
+        form = QFormLayout()
+        
+        provider_combo = QComboBox()
+        providers = ["Ollama", "OpenAI", "Anthropic", "Gemini", "DeepSeek"]
+        provider_combo.addItems(providers)
+        provider_combo.setCurrentText(self.settings_manager.get_provider())
+        form.addRow("Provider:", provider_combo)
+        
+        model_input = QLineEdit()
+        form.addRow("Model Name:", model_input)
+        
+        api_key_input = QLineEdit()
+        api_key_input.setEchoMode(QLineEdit.Password)
+        form.addRow("API Key:", api_key_input)
+        
+        def update_fields():
+            prov = provider_combo.currentText()
+            model_input.setText(self.settings_manager.get_model_name(prov))
+            api_key_input.setText(self.settings_manager.get_api_key(prov))
+            
+            # Disable API key for Ollama
+            if prov.lower() == "ollama":
+                api_key_input.setEnabled(False)
+                api_key_input.setPlaceholderText("Not required for local Ollama")
+            else:
+                api_key_input.setEnabled(True)
+                api_key_input.setPlaceholderText("Enter API Key")
+                
+        provider_combo.currentTextChanged.connect(update_fields)
+        update_fields() # Initial populate
+        
+        layout.addLayout(form)
+        
+        btn_layout = QHBoxLayout()
+        save_btn = QPushButton("Save & Reload")
+        save_btn.clicked.connect(lambda: self.save_settings(dialog, provider_combo, model_input, api_key_input))
+        btn_layout.addStretch()
+        btn_layout.addWidget(save_btn)
+        
+        layout.addLayout(btn_layout)
+        dialog.exec_()
+        
+    def save_settings(self, dialog, provider_combo, model_input, api_key_input):
+        prov = provider_combo.currentText()
+        self.settings_manager.save_provider(prov)
+        self.settings_manager.save_model_name(prov, model_input.text())
+        self.settings_manager.save_api_key(prov, api_key_input.text())
+        
+        self.update_qa_status("Reloading LLM Provider...", "#8b949e")
+        dialog.accept()
+        
+        # Reload LLM asynchronously
+        def reload():
+            try:
+                if not self.llm_manager:
+                    self.llm_manager = LLMManager()
+                else:
+                    self.llm_manager.reload_llm()
+                self.update_qa_status(f"Provider Ready: {prov}", "#238636")
+            except Exception as e:
+                self.update_qa_status(f"Provider Error: {str(e)}", "#dc3545")
+                
+        threading.Thread(target=reload, daemon=True).start()
+
         
     def create_webview_panel(self, parent):
         webview_frame = QFrame()
@@ -1592,8 +1675,8 @@ class ConvoVault(QMainWindow):
         if not question:
             return
         
-        if not self.qa_system:
-            self.append_to_chat("System", "AI model is still loading. Please wait...")
+        if not self.llm_manager:
+            self.append_to_chat("System", "LLM Provider is not configured or still loading. Please check Settings.")
             return
         
         if not context:
@@ -1601,32 +1684,63 @@ class ConvoVault(QMainWindow):
             self.message_input.clear()
             return
         
+        self.chat_history.append({"role": "user", "content": question})
         self.append_to_chat("You", question)
+        self.append_to_html_view("human", question)
+        
         self.message_input.clear()
         
         self.send_btn.setEnabled(False)
         self.send_btn.setText("...")
         
-        self.qa_worker = QAWorker(self.qa_system, context , question)
-        self.qa_worker.answer_ready.connect(self.handle_qa_response)
-        self.qa_worker.start()
+        self.llm_chat_worker = LLMChatWorker(self.llm_manager, context, self.chat_history[:-1], question)
+        self.llm_chat_worker.answer_ready.connect(self.handle_qa_response)
+        self.llm_chat_worker.start()
     
-    def handle_qa_response(self, answer, confidence, context_window, processing_time):
+    def handle_qa_response(self, result):
         self.send_btn.setEnabled(True)
         self.send_btn.setText("Send")
         
-        if not answer or confidence < 0.3:
-            self.append_to_chat("AI", 
-                f"I couldn't find a confident answer to that question in this conversation.\n"
-                f"Confidence: {confidence:.2%}\n\n"
-                f"Try rephrasing your question or ensure the topic is discussed in the loaded conversation.")
-        else:
-            response = f"{answer}\n\n"
-            response += f"Confidence: {confidence:.2%} | Processing Time: {processing_time:.2f}s"
-            if context_window:
-                response += f"\n\nContext: ...{context_window}..."
-            
-            self.append_to_chat("AI", response)
+        answer = result.get("answer", "")
+        self.chat_history.append({"role": "assistant", "content": answer})
+        
+        response_text = f"{answer}\n\n[Processing Time: {result.get('processing_time', 0):.2f}s]"
+        self.append_to_chat("AI", response_text)
+        self.append_to_html_view("assistant", answer)
+
+    def append_to_html_view(self, sender, text):
+        worker = ConversionWorker("", "")
+        message = {
+            'sender': sender,
+            'text': text,
+            'created_at': datetime.now().isoformat() + 'Z',
+            'uuid': f'chat-{int(time.time()*1000)}',
+            'content': [{'type': 'text', 'text': text}],
+            'files': [],
+            'attachments': []
+        }
+        html_block = worker.create_message_html(message)
+        
+        b64_html = base64.b64encode(html_block.encode('utf-8')).decode('utf-8')
+        
+        js_code = f"""
+        var conv = document.querySelector('.conversation');
+        if (conv) {{
+            var decodedHtml = decodeURIComponent(escape(window.atob('{b64_html}')));
+            var template = document.createElement('template');
+            template.innerHTML = decodedHtml;
+            var newElement = template.content.firstElementChild;
+            conv.appendChild(newElement);
+            window.scrollTo(0, document.body.scrollHeight);
+            if (typeof hljs !== 'undefined') {{
+                var blocks = newElement.querySelectorAll('pre code');
+                for (var i = 0; i < blocks.length; i++) {{
+                    hljs.highlightElement(blocks[i]);
+                }}
+            }}
+        }}
+        """
+        self.webview.page().runJavaScript(js_code)
     
     def append_to_chat(self, sender, message):
         current_text = self.chat_display.toPlainText()

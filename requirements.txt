@@ -1,4 +1,8 @@
-transformers
-torch==2.0.1
+langchain
+langchain-openai
+langchain-anthropic
+langchain-google-genai
+langchain-community
+langchain-ollama
 psycopg2
 python-dotenv==1.0.0
