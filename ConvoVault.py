@@ -650,6 +650,7 @@ class ConvoVault(QMainWindow):
         self.conversation_files = []
         self.current_conversation_data = None
         self.current_conversation_title = "No conversation loaded"
+        self.current_html_path = None
         self.llm_manager = None
         self.llm_chat_worker = None
         self.chat_history = []
@@ -790,7 +791,7 @@ class ConvoVault(QMainWindow):
         statusbar.addWidget(separator2)
         
         # Add version info
-        version_label = QLabel("v1.0.0")
+        version_label = QLabel("v1.0.8")
         version_label.setStyleSheet("color: #656d76; padding: 0 10px;")
         statusbar.addWidget(version_label)
         
@@ -1555,8 +1556,10 @@ class ConvoVault(QMainWindow):
         file_path = os.path.join(self.output_dir, conv_info['file'])
         
         if os.path.exists(file_path):
-            url = QUrl.fromLocalFile(os.path.abspath(file_path))
+            abs_path = os.path.abspath(file_path)
+            url = QUrl.fromLocalFile(abs_path)
             self.webview.load(url)
+            self.current_html_path = abs_path
             
             # Only load conversation data for individual conversations (not index)
             if conv_info['file'] != 'index.html':
@@ -1726,21 +1729,52 @@ class ConvoVault(QMainWindow):
         js_code = f"""
         var conv = document.querySelector('.conversation');
         if (conv) {{
-            var decodedHtml = decodeURIComponent(escape(window.atob('{b64_html}')));
-            var template = document.createElement('template');
-            template.innerHTML = decodedHtml;
-            var newElement = template.content.firstElementChild;
-            conv.appendChild(newElement);
-            window.scrollTo(0, document.body.scrollHeight);
-            if (typeof hljs !== 'undefined') {{
-                var blocks = newElement.querySelectorAll('pre code');
-                for (var i = 0; i < blocks.length; i++) {{
-                    hljs.highlightElement(blocks[i]);
+            try {{
+                var binaryString = window.atob('{b64_html}');
+                var bytes = new Uint8Array(binaryString.length);
+                for (var i = 0; i < binaryString.length; i++) {{
+                    bytes[i] = binaryString.charCodeAt(i);
                 }}
+                var decodedHtml = new TextDecoder('utf-8').decode(bytes);
+                
+                var template = document.createElement('template');
+                template.innerHTML = decodedHtml;
+                var newElement = template.content.firstElementChild;
+                conv.appendChild(newElement);
+                window.scrollTo(0, document.body.scrollHeight);
+                if (typeof hljs !== 'undefined') {{
+                    var blocks = newElement.querySelectorAll('pre code');
+                    for (var i = 0; i < blocks.length; i++) {{
+                        hljs.highlightElement(blocks[i]);
+                    }}
+                }}
+            }} catch (e) {{
+                console.error("Failed to append HTML view:", e);
             }}
         }}
         """
         self.webview.page().runJavaScript(js_code)
+        
+        # Save payload to disk so it persists
+        if hasattr(self, 'current_html_path') and self.current_html_path and os.path.exists(self.current_html_path):
+            print(f"[DEBUG] Attempting to save to {self.current_html_path}")
+            try:
+                with open(self.current_html_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                
+                match = re.search(r'(</div>\s*</div>\s*</body>)', content)
+                if match:
+                    print("[DEBUG] Match found for HTML injection!")
+                    content = content[:match.start()] + html_block + "\n" + match.group(1) + content[match.end():]
+                    with open(self.current_html_path, 'w', encoding='utf-8') as f:
+                        f.write(content)
+                    print("[DEBUG] Successfully saved to disk.")
+                else:
+                    print("[DEBUG] Regex MATCH FAILED on file content.")
+            except Exception as e:
+                print(f"[ERROR] Failed to save AI response to disk: {e}")
+        else:
+            print("[DEBUG] current_html_path not set or file doesn't exist.")
     
     def append_to_chat(self, sender, message):
         current_text = self.chat_display.toPlainText()
