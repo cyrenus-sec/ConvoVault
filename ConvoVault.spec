@@ -5,7 +5,7 @@ a = Analysis(
     ['ConvoVault.py'],
     pathex=[],
     binaries=[],
-    datas=[('model', 'model'), ('icon.png', '.')],
+    datas=[('icon.png', '.')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
