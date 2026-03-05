@@ -52,9 +52,7 @@ jobs:
         pip install --no-cache-dir -r requirements.txt
         git checkout requirements.txt
 
-    - name: Download AI Model
-      run: |
-        python QuestionAnswering.py
+
 
     - name: Build with PyInstaller
       run: |
