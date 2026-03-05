@@ -53,3 +53,12 @@ pyinstaller ConvoVault.spec
 ## Developer
 
 Developed by Mohamed Alaaeldin.
+
+## Changelog
+
+### v1.0.10 - LangChain Multi-LLM Chat Integration
+- **Removed**: Local AI Question-Answering using heavy PyTorch and HuggingFace dependencies (deleted `QuestionAnswering.py`).
+- **Added**: Full LangChain integration via `LLMManager.py` supporting OpenAI, Anthropic, DeepSeek, Google Gemini, and fully offline models via Ollama.
+- **Added**: Persistent SQLite-backed Settings tab inside the AI Chat interface to store API keys and manage provider preferences securely on your local machine.
+- **Improved**: AI Chat responses now seamlessly inject into the exported Markdown and Syntax-Highlighted HTML views.
+- **Note**: The web LLM interactions have currently been primarily tested using the Google Gemini model.
